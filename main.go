@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/eiannone/keyboard"
@@ -23,7 +24,6 @@ func core(coreNumber int, threadsNum int, taskChannel chan uint32, coresLoad []i
 	for {
 		for len(taskChannel) > 0 && len(freeThreads) > 0 {
 			threadNumber := freeThreads[0]
-			fmt.Println("here2")
 			PID := <-taskChannel
 			freeThreads = freeThreads[1:]
 			coresLoad[coreNumber]-- //Добавление освободившихся потоков в стек freeThreads и посыл процессору, сколько у нас свободных мест
@@ -81,7 +81,6 @@ func keyboardHandler(keyChannel chan uint32) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(key)
 		if key == keyboard.KeySpace {
 			keyChannel <- PID
 			PID++
@@ -94,7 +93,7 @@ func keyboardHandler(keyChannel chan uint32) {
 }
 
 func processor(cores []int, coresNum int, threadsNum int) {
-	keyChannel := make(chan uint32)
+	keyChannel := make(chan uint32, 1)
 	var taskChannels []chan uint32 = make([]chan uint32, coresNum)
 	for i := 0; i < coresNum; i++ {
 		taskChannels[i] = make(chan uint32, threadsNum)
@@ -103,19 +102,19 @@ func processor(cores []int, coresNum int, threadsNum int) {
 	var queue []uint32
 
 	for {
-		PID := <-keyChannel
-		if PID == 0 {
-			close(keyChannel)
+		if len(keyChannel) != 0 {
+			PID := <-keyChannel
+			if PID == 0 {
+				close(keyChannel)
+			}
+			queue = append(queue, PID)
 		}
-		queue = append(queue, PID)
 
 		tasksLen := len(queue)
 		for tasksLen != 0 { //Подумать, как обрабатывать процессы
 			PID := queue[0] //И принимать завершенную работу
-			queue = queue[1:]
-			fmt.Println(PID, "in the 112")
 			if PID == 0 {
-				fmt.Println("return proc")
+				waitForCores()
 				return
 			}
 
@@ -127,19 +126,26 @@ func processor(cores []int, coresNum int, threadsNum int) {
 					freeThreads = cores[i]
 				}
 			}
-			fmt.Println(cores)
+			//fmt.Println(cores)
 			if cores[freeCore] != 0 {
 				if cores[freeCore] == threadsNum {
 					go core(freeCore, threadsNum, taskChannels[freeCore], cores)
-				} else {
-					fmt.Println("not go core")
 				}
 				taskChannels[freeCore] <- PID
+				queue = queue[1:]
 			} else {
 				break
 			}
 			tasksLen--
 		}
+	}
 
+}
+
+func waitForCores() {
+	fmt.Println("You pressed ESC! Waiting for cores to finish their job...")
+	defer fmt.Println("All cores finished their jobs. Escape!")
+	for runtime.NumGoroutine() != 1 {
+		time.Sleep(time.Second)
 	}
 }
