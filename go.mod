@@ -1,4 +1,4 @@
-module multy
+module github.com/mateussssz/multy
 
 go 1.22.2
 
