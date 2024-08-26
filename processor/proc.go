@@ -2,12 +2,14 @@ package processor
 
 import (
 	"fmt"
-	"time"
 	"runtime"
+	"time"
+
 	"github.com/mateussssz/multy/keyboard"
+	st "github.com/mateussssz/multy/structs"
 )
 
-func Processor(cores []int, coresNum int, threadsNum int) {
+func Processor(cLoad *st.CoresLoad, coresNum int, threadsNum int) {
 	keyChannel := make(chan uint32, 1)
 	var taskChannels []chan uint32 = make([]chan uint32, coresNum)
 	for i := 0; i < coresNum; i++ {
@@ -34,17 +36,16 @@ func Processor(cores []int, coresNum int, threadsNum int) {
 			}
 
 			freeCore := 0
-			freeThreads := cores[0]
-			for i := 1; i < len(cores); i++ {
-				if cores[i] > freeThreads {
+			freeThreads := cLoad.Cores[0]
+			for i := 1; i < len(cLoad.Cores); i++ {
+				if cLoad.Cores[i] > freeThreads {
 					freeCore = i
-					freeThreads = cores[i]
+					freeThreads = cLoad.Cores[i]
 				}
 			}
-			//fmt.Println(cores)
-			if cores[freeCore] != 0 {
-				if cores[freeCore] == threadsNum {
-					go core(freeCore, threadsNum, taskChannels[freeCore], cores)
+			if cLoad.Cores[freeCore] != 0 {
+				if cLoad.Cores[freeCore] == threadsNum {
+					go core(freeCore, threadsNum, taskChannels[freeCore], cLoad)
 				}
 				taskChannels[freeCore] <- PID
 				queue = queue[1:]
@@ -56,7 +57,7 @@ func Processor(cores []int, coresNum int, threadsNum int) {
 	}
 }
 
-func core(coreNumber int, threadsNum int, taskChannel chan uint32, coresLoad []int) {
+func core(coreNumber int, threadsNum int, taskChannel chan uint32, cLoad *st.CoresLoad) {
 	fmt.Println(coreNumber, "core was activated")
 	freeChannel := make(chan int, threadsNum)
 	var freeThreads []int
@@ -69,13 +70,17 @@ func core(coreNumber int, threadsNum int, taskChannel chan uint32, coresLoad []i
 			threadNumber := freeThreads[0]
 			PID := <-taskChannel
 			freeThreads = freeThreads[1:]
-			coresLoad[coreNumber]-- //Добавление освободившихся потоков в стек freeThreads и посыл процессору, сколько у нас свободных мест
+			cLoad.Lock()
+			cLoad.Cores[coreNumber]-- //Добавление освободившихся потоков в стек freeThreads и посыл процессору, сколько у нас свободных мест
+			cLoad.Unlock()
 			go thread(coreNumber, threadNumber, PID, freeChannel)
 		}
 		for len(freeChannel) != 0 {
 			value := <-freeChannel
 			freeThreads = append(freeThreads, value)
-			coresLoad[coreNumber]++ //Добавление освободившихся потоков в стек freeThreads и посыл процессору, сколько у нас свободных мест
+			cLoad.Lock()
+			cLoad.Cores[coreNumber]++ //Добавление освободившихся потоков в стек freeThreads и посыл процессору, сколько у нас свободных мест
+			cLoad.Unlock()
 		}
 
 		if len(freeThreads) == threadsNum && len(taskChannel) == 0 {
@@ -94,8 +99,6 @@ func thread(coreNumber int, threadNumber int, PID uint32, freeChannel chan int) 
 	fmt.Println(coreNumber, "core finished the", threadNumber, "thread")
 	freeChannel <- threadNumber
 }
-
-
 
 func waitForCores() {
 	fmt.Println("You pressed ESC! Waiting for cores to finish their job...")
